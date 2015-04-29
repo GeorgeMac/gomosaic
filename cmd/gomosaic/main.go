@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"image/png"
+	"io"
 	"log"
 	"os"
 
@@ -11,8 +12,10 @@ import (
 
 func main() {
 	var width, height int
+	var outp string
 	flag.IntVar(&width, "w", 50, "Width in number of tiles")
 	flag.IntVar(&height, "h", 50, "Height in number of tiles")
+	flag.StringVar(&outp, "o", "", "Destination path to write file to (otherwise STDOUT)")
 	flag.Parse()
 
 	path := flag.Args()[0]
@@ -27,13 +30,19 @@ func main() {
 		log.Fatal(err)
 	}
 
-	dst, err := os.Create("output.png")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer dst.Close()
+	var out io.Writer = os.Stdout
 
-	if err := png.Encode(dst, im); err != nil {
+	if outp != "" {
+		var err error
+		fi, err := os.Create(outp)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer fi.Close()
+		out = fi
+	}
+
+	if err := png.Encode(out, im); err != nil {
 		log.Fatal(err)
 	}
 }
