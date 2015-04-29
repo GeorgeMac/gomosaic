@@ -13,20 +13,20 @@ import (
 	_ "image/png"
 )
 
-const (
-	width  = 100
-	height = 100
-)
-
 // type convert palette.WebSafe in to color.Palette type locally
 var WebSafe color.Palette = color.Palette(palette.WebSafe)
 
 type Decoder struct {
 	io.Reader
+	Width, Height int
 }
 
-func NewDecoder(r io.Reader) *Decoder {
-	return &Decoder{r}
+func NewDecoder(r io.Reader, width, height int) *Decoder {
+	return &Decoder{
+		Reader: r,
+		Width:  width,
+		Height: height,
+	}
 }
 
 func (d *Decoder) Decode() (image.Image, error) {
@@ -45,8 +45,8 @@ func (d *Decoder) Decode() (image.Image, error) {
 	// begin tiling routing
 	go func() {
 		x, y := bounds.Min.X, bounds.Min.Y
-		dx := int(math.Ceil(float64(bounds.Max.X / width)))
-		dy := int(math.Ceil(float64(bounds.Max.Y / height)))
+		dx := int(math.Ceil(float64(bounds.Max.X / d.Width)))
+		dy := int(math.Ceil(float64(bounds.Max.Y / d.Height)))
 
 		x1 := x
 		x2 := x + dx
