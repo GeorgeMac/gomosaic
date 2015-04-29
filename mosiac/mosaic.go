@@ -3,7 +3,6 @@ package mosaic
 import (
 	"image"
 	"io"
-	"log"
 	"math"
 	"sync"
 
@@ -64,7 +63,6 @@ func (d *Decoder) Decode() (image.Image, error) {
 					y2 = bounds.Max.Y
 				}
 
-				log.Println(x1, y1, x2, y2)
 				// create rectangle view
 				proc <- image.Rect(x1, y1, x2, y2)
 
