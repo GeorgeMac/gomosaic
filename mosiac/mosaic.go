@@ -9,6 +9,8 @@ import (
 	"image/color"
 	"image/color/palette"
 	"image/draw"
+	_ "image/gif"
+	_ "image/jpeg"
 	_ "image/png"
 )
 
@@ -37,7 +39,7 @@ func (d *Decoder) Decode() (image.Image, error) {
 	// tiles to process channel
 	proc := make(chan image.Rectangle, 100)
 	// tiles to compose
-	comp := make(chan tile)
+	comp := make(chan window)
 
 	// initial image bounds
 	bounds := im.Bounds()
@@ -92,7 +94,7 @@ func (d *Decoder) Decode() (image.Image, error) {
 			wg.Add(1)
 			go func() {
 				for rec := range proc {
-					comp <- tile{
+					comp <- window{
 						Rect:  rec,
 						Image: uniformForRectangleInImage(im, rec),
 					}
@@ -108,14 +110,15 @@ func (d *Decoder) Decode() (image.Image, error) {
 	// tile composition routine
 	for tile := range comp {
 		// draw tile in to destination
-		draw.Draw(dst, tile.Rect, tile.Image, tile.Rect.Min, draw.Src)
+		draw.Draw(dst, tile.Rect, tile.Image, image.ZP, draw.Src)
 	}
 
 	return dst, err
 }
 
-// tile represents a window (tile) from a source image
-type tile struct {
+// window contains an image to render + a target rectangle
+// view to render it in to.
+type window struct {
 	Rect  image.Rectangle
 	Image image.Image
 }
@@ -141,11 +144,7 @@ func uniformForRectangleInImage(m image.Image, r image.Rectangle) image.Image {
 	)
 
 	for k, v := range bins {
-		if c == nil {
-			c = RGBA(k)
-			continue
-		}
-		if v > max {
+		if c == nil || v > max {
 			c = RGBA(k)
 			max = v
 		}
