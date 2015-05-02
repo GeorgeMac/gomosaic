@@ -17,17 +17,45 @@ import (
 // type convert palette.WebSafe in to color.Palette type locally
 var WebSafe color.Palette = color.Palette(palette.WebSafe)
 
-type Decoder struct {
-	io.Reader
-	Width, Height int
+type option func(d *Decoder)
+
+func WithWidth(w int) option {
+	return func(d *Decoder) {
+		d.width = w
+	}
 }
 
-func NewDecoder(r io.Reader, width, height int) *Decoder {
-	return &Decoder{
-		Reader: r,
-		Width:  width,
-		Height: height,
+func WithHeight(h int) option {
+	return func(d *Decoder) {
+		d.height = h
 	}
+}
+
+func WithPalette(p *TilePalette) option {
+	return func(d *Decoder) {
+		d.palette = p
+	}
+}
+
+type Decoder struct {
+	io.Reader
+	palette       *TilePalette
+	width, height int
+}
+
+func NewDecoder(r io.Reader, opts ...option) *Decoder {
+	d := &Decoder{
+		Reader:  r,
+		width:   100,
+		height:  100,
+		palette: UniformPalette,
+	}
+
+	for _, opt := range opts {
+		opt(d)
+	}
+
+	return d
 }
 
 func (d *Decoder) Decode() (image.Image, error) {
@@ -35,6 +63,8 @@ func (d *Decoder) Decode() (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	imtile := NewImageTile(im)
 
 	// tiles to process channel
 	proc := make(chan image.Rectangle, 100)
@@ -46,8 +76,8 @@ func (d *Decoder) Decode() (image.Image, error) {
 	// begin tiling routing
 	go func() {
 		x, y := bounds.Min.X, bounds.Min.Y
-		dx := int(math.Ceil(float64(bounds.Max.X / d.Width)))
-		dy := int(math.Ceil(float64(bounds.Max.Y / d.Height)))
+		dx := int(math.Ceil(float64(bounds.Max.X / d.width)))
+		dy := int(math.Ceil(float64(bounds.Max.Y / d.height)))
 
 		x1 := x
 		x2 := x + dx
@@ -90,13 +120,14 @@ func (d *Decoder) Decode() (image.Image, error) {
 	// average calculation go routines
 	var wg sync.WaitGroup
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := 0; i < 10; i++ {
 			wg.Add(1)
 			go func() {
 				for rec := range proc {
+					c := imtile.ColorAt(rec)
 					comp <- window{
 						Rect:  rec,
-						Image: uniformForRectangleInImage(im, rec),
+						Image: d.palette.Convert(c),
 					}
 				}
 				wg.Done()
@@ -110,7 +141,7 @@ func (d *Decoder) Decode() (image.Image, error) {
 	// tile composition routine
 	for tile := range comp {
 		// draw tile in to destination
-		draw.Draw(dst, tile.Rect, tile.Image, image.ZP, draw.Src)
+		draw.Draw(dst, tile.Rect, tile.Image, tile.Rect.Min, draw.Src)
 	}
 
 	return dst, err
@@ -121,41 +152,4 @@ func (d *Decoder) Decode() (image.Image, error) {
 type window struct {
 	Rect  image.Rectangle
 	Image image.Image
-}
-
-func uniformForRectangleInImage(m image.Image, r image.Rectangle) image.Image {
-	bins := map[[4]uint32]int{}
-
-	for y := r.Min.Y; y < r.Max.Y; y++ {
-		for x := r.Min.X; x < r.Max.X; x++ {
-			r, g, b, a := WebSafe.Convert(m.At(x, y)).RGBA()
-			key := [4]uint32{r, g, b, a}
-			if v, ok := bins[key]; ok {
-				bins[key] = v + 1
-				continue
-			}
-			bins[key] = 1
-		}
-	}
-
-	var (
-		c   color.Color
-		max int
-	)
-
-	for k, v := range bins {
-		if c == nil || v > max {
-			c = RGBA(k)
-			max = v
-		}
-	}
-
-	if c == nil {
-		return image.NewUniform(color.Black)
-	}
-	return image.NewUniform(c)
-}
-
-func RGBA(v [4]uint32) color.Color {
-	return color.RGBA{uint8(v[0]), uint8(v[1]), uint8(v[2]), uint8(v[3])}
 }
