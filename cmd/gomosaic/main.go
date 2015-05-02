@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/GeorgeMac/gomosaic/mosiac"
+	"github.com/GeorgeMac/gomosaic/mosaic"
 )
 
 func main() {
