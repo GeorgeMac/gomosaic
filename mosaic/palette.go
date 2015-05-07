@@ -4,19 +4,13 @@ import (
 	"image"
 	"image/color"
 	"image/color/palette"
+	"os"
+	"path/filepath"
+
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 )
-
-var UniformPalette *TilePalette
-
-func init() {
-	tiles := make([]Tile, 0)
-	for _, c := range palette.WebSafe {
-		tiles = append(tiles, &UniformTile{
-			Uniform: image.NewUniform(c),
-		})
-	}
-	UniformPalette = NewTilePalette(tiles, 50)
-}
 
 type Key [4]uint32
 
@@ -35,14 +29,58 @@ type TilePalette struct {
 	Size    int
 }
 
-func NewTilePalette(tiles []Tile, size ...int) *TilePalette {
+func NewUniformWebColorPalette(size int) *TilePalette {
+	tiles := make([]Tile, 0)
+	for _, c := range palette.WebSafe {
+		tiles = append(tiles, &UniformTile{
+			Uniform: image.NewUniform(c),
+		})
+	}
+	return NewTilePalette(tiles, size)
+}
+
+func NewImageTilePalette(dir string, size int) (*TilePalette, error) {
+	tile := make([]Tile, 0)
+	walkfn := func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		ext := filepath.Ext(path)
+		for _, e := range []string{".gif", ".jpg", ".jpeg", ".png"} {
+			if ext == e {
+				fi, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+				im, _, err := image.Decode(fi)
+				if err != nil {
+					return err
+				}
+
+				tile = append(tile, NewImageTile(im))
+				return nil
+			}
+		}
+		return nil
+	}
+
+	if err := filepath.Walk(dir, walkfn); err != nil {
+		return nil, err
+	}
+
+	return NewTilePalette(tile, size), nil
+}
+
+func NewTilePalette(tiles []Tile, size int) *TilePalette {
 	t := &TilePalette{
 		lookup:  map[Key]Tile{},
 		palette: color.Palette(make([]color.Color, 0)),
-		Size:    100,
-	}
-	for _, s := range size {
-		t.Size = s
+		Size:    size,
 	}
 
 	for _, tile := range tiles {

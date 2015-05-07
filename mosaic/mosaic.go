@@ -34,16 +34,22 @@ func WithHeight(h int) option {
 	}
 }
 
-func WithPalette(p *TilePalette) option {
+func WithSize(s int) option {
+	return func(d *Decoder) {
+		d.size = s
+	}
+}
+
+func WithPalette(p func(int) (*TilePalette, error)) option {
 	return func(d *Decoder) {
 		d.palette = p
 	}
 }
 
 type Decoder struct {
-	im            image.Image
-	palette       *TilePalette
-	width, height int
+	im                  image.Image
+	palette             func(int) (*TilePalette, error)
+	width, height, size int
 }
 
 func NewDecoder(im image.Image, opts ...option) *Decoder {
@@ -51,7 +57,8 @@ func NewDecoder(im image.Image, opts ...option) *Decoder {
 		im:      im,
 		width:   100,
 		height:  100,
-		palette: UniformPalette,
+		size:    100,
+		palette: func(size int) (*TilePalette, error) { return NewUniformWebColorPalette(size), nil },
 	}
 
 	for _, opt := range opts {
@@ -63,7 +70,7 @@ func NewDecoder(im image.Image, opts ...option) *Decoder {
 
 func (d *Decoder) Decode() (image.Image, error) {
 	// tiles to process channel
-	proc := make(chan image.Rectangle, 10)
+	proc := make(chan image.Rectangle, 2)
 	// tiles to compose
 	comp := make(chan source)
 	// resized image promise
@@ -71,8 +78,8 @@ func (d *Decoder) Decode() (image.Image, error) {
 
 	bounds := d.im.Bounds()
 	// initial image bounds
-	nx := d.width * d.palette.Size
-	ny := d.height * d.palette.Size
+	nx := d.width * d.size
+	ny := d.height * d.size
 	sx, sy := float64(nx)/float64(bounds.Dx()), float64(ny)/float64(bounds.Dy())
 
 	fmt.Printf("[mosaic] Original [%d, %d] New [%d, %d] Scale [%d, %d]\n", bounds.Dx(), bounds.Dy(), nx, ny, sx, sy)
@@ -135,8 +142,16 @@ func (d *Decoder) Decode() (image.Image, error) {
 
 	log.Println("[mosaic] Fetching color information")
 	// average calculation go routines
+	var perr error
 	var wg sync.WaitGroup
 	go func() {
+		palette, err := d.palette(d.size)
+		if err != nil {
+			log.Println("[mosaic] Error creating palette")
+			perr = err
+			close(comp)
+			return
+		}
 		for i := 0; i < 10; i++ {
 			wg.Add(1)
 			go func() {
@@ -144,7 +159,7 @@ func (d *Decoder) Decode() (image.Image, error) {
 					c := imtile.ColorAt(rect)
 					min, max := rect.Min, rect.Max
 					comp <- source{
-						Image: d.palette.Convert(c),
+						Image: palette.Convert(c),
 						Rect: image.Rectangle{
 							Min: image.Point{
 								X: int(math.Floor(float64(min.X) * sx)),
@@ -171,6 +186,9 @@ func (d *Decoder) Decode() (image.Image, error) {
 	for tile := range comp {
 		// draw tile in to destination
 		draw.DrawMask(dst, tile.Rect, tile.Image, image.ZP, mask, image.ZP, draw.Over)
+	}
+	if perr != nil {
+		return nil, perr
 	}
 
 	return dst, nil

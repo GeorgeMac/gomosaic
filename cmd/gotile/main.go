@@ -1,7 +1,9 @@
 package main
 
 import (
+	"flag"
 	"image"
+	"image/draw"
 	"image/png"
 	"log"
 	"os"
@@ -13,7 +15,10 @@ import (
 )
 
 func main() {
-	src, dst := os.Args[1], os.Args[2]
+	var size int
+	flag.IntVar(&size, "s", 50, "Tile Output Size")
+	flag.Parse()
+	src, dst := flag.Arg(0), flag.Arg(1)
 
 	srcfi, err := os.Open(src)
 	if err != nil {
@@ -32,7 +37,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	dstim, err := tile.Tile(srcim, 100, 100)
+	bounds := srcim.Bounds()
+	rect := image.Rect(0, 0, bounds.Dx(), bounds.Dx())
+	copyim := image.NewRGBA(rect)
+	draw.Draw(copyim, rect, srcim, image.ZP, draw.Src)
+
+	dstim, err := tile.Tile(copyim, size, size)
 	if err != nil {
 		log.Fatal(err)
 	}
