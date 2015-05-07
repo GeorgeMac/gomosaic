@@ -2,16 +2,15 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"image"
+	"image/draw"
 	"image/png"
 	"io"
 	"log"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/GeorgeMac/gomosaic/mosaic"
+	"github.com/GeorgeMac/gomosaic/mosaic/tile"
 )
 
 func main() {
@@ -30,46 +29,30 @@ func main() {
 		log.Fatal(err)
 	}
 
-	palette := mosaic.UniformPalette
-	if dirp != "" {
-		tiles := []mosaic.Tile{}
-		if err := filepath.Walk(dirp, func(path string, fi os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-
-			if fi.IsDir() {
-				return nil
-			}
-
-			for _, ext := range []string{"png", "jpg", "jpeg", "gif"} {
-				if strings.HasSuffix(path, ext) {
-					fi, err := os.Open(path)
-					if err != nil {
-						return err
-					}
-
-					m, _, err := image.Decode(fi)
-					if err != nil {
-						return err
-					}
-
-					tile := mosaic.NewImageTile(m)
-					fmt.Println("Tile", tile)
-					tiles = append(tiles, tile)
-					return nil
-				}
-			}
-			return nil
-		}); err != nil {
-			log.Fatal(err)
-		}
-
-		palette = mosaic.NewTilePalette(tiles)
+	im, _, err := image.Decode(fi)
+	if err != nil {
+		log.Fatal("Decoding Error: ", err)
 	}
 
-	decoder := mosaic.NewDecoder(fi, mosaic.WithWidth(width), mosaic.WithHeight(height), mosaic.WithPalette(palette))
-	im, err := decoder.Decode()
+	bounds := im.Bounds()
+	var w, x, y int
+	x, y = bounds.Dx(), bounds.Dy()
+	w = x
+	if y < x {
+		w = y
+	}
+
+	rect := image.Rect(0, 0, x, y)
+	rgbaim := image.NewRGBA(rect)
+	draw.Draw(rgbaim, rect, im, image.ZP, draw.Src)
+
+	im, err = tile.Tile(rgbaim, w, w)
+	if err != nil {
+		log.Fatal("Tiling Error: ", err)
+	}
+
+	decoder := mosaic.NewDecoder(im, mosaic.WithWidth(width), mosaic.WithHeight(height))
+	im, err = decoder.Decode()
 	if err != nil {
 		log.Fatal(err)
 	}

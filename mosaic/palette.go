@@ -15,7 +15,7 @@ func init() {
 			Uniform: image.NewUniform(c),
 		})
 	}
-	UniformPalette = NewTilePalette(tiles)
+	UniformPalette = NewTilePalette(tiles, 50)
 }
 
 type Key [4]uint32
@@ -32,13 +32,19 @@ func (k Key) Color() color.Color {
 type TilePalette struct {
 	lookup  map[Key]Tile
 	palette color.Palette
+	Size    int
 }
 
-func NewTilePalette(tiles []Tile) *TilePalette {
+func NewTilePalette(tiles []Tile, size ...int) *TilePalette {
 	t := &TilePalette{
 		lookup:  map[Key]Tile{},
 		palette: color.Palette(make([]color.Color, 0)),
+		Size:    100,
 	}
+	for _, s := range size {
+		t.Size = s
+	}
+
 	for _, tile := range tiles {
 		t.palette = append(t.palette, tile)
 		t.lookup[NewKey(tile)] = tile

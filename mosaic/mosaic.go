@@ -1,10 +1,13 @@
 package mosaic
 
 import (
+	"fmt"
 	"image"
-	"io"
+	"log"
 	"math"
 	"sync"
+
+	"github.com/bamiaux/rez"
 
 	"image/color"
 	"image/color/palette"
@@ -38,14 +41,14 @@ func WithPalette(p *TilePalette) option {
 }
 
 type Decoder struct {
-	io.Reader
+	im            image.Image
 	palette       *TilePalette
 	width, height int
 }
 
-func NewDecoder(r io.Reader, opts ...option) *Decoder {
+func NewDecoder(im image.Image, opts ...option) *Decoder {
 	d := &Decoder{
-		Reader:  r,
+		im:      im,
 		width:   100,
 		height:  100,
 		palette: UniformPalette,
@@ -59,20 +62,33 @@ func NewDecoder(r io.Reader, opts ...option) *Decoder {
 }
 
 func (d *Decoder) Decode() (image.Image, error) {
-	im, _, err := image.Decode(d)
-	if err != nil {
-		return nil, err
-	}
-
-	imtile := NewImageTile(im)
-
 	// tiles to process channel
-	proc := make(chan image.Rectangle, 100)
+	proc := make(chan image.Rectangle, 10)
 	// tiles to compose
-	comp := make(chan window)
+	comp := make(chan source)
+	// resized image promise
+	scaled := make(chan draw.Image)
 
+	bounds := d.im.Bounds()
 	// initial image bounds
-	bounds := im.Bounds()
+	nx := d.width * d.palette.Size
+	ny := d.height * d.palette.Size
+	sx, sy := float64(nx)/float64(bounds.Dx()), float64(ny)/float64(bounds.Dy())
+
+	fmt.Printf("[mosaic] Original [%d, %d] New [%d, %d] Scale [%d, %d]\n", bounds.Dx(), bounds.Dy(), nx, ny, sx, sy)
+
+	log.Println("[mosaic] Begin resizing")
+	go func() {
+		dst := image.NewRGBA(image.Rect(0, 0, nx, ny))
+		if err := rez.Convert(dst, d.im, rez.NewBilinearFilter()); err != nil {
+			log.Fatal(err)
+		}
+		scaled <- dst
+		close(scaled)
+	}()
+
+	imtile := NewImageTile(d.im)
+	log.Println("[mosaic] Calculating tiles")
 	// begin tiling routing
 	go func() {
 		x, y := bounds.Min.X, bounds.Min.Y
@@ -117,17 +133,28 @@ func (d *Decoder) Decode() (image.Image, error) {
 		close(proc)
 	}()
 
+	log.Println("[mosaic] Fetching color information")
 	// average calculation go routines
 	var wg sync.WaitGroup
 	go func() {
 		for i := 0; i < 10; i++ {
 			wg.Add(1)
 			go func() {
-				for rec := range proc {
-					c := imtile.ColorAt(rec)
-					comp <- window{
-						Rect:  rec,
+				for rect := range proc {
+					c := imtile.ColorAt(rect)
+					min, max := rect.Min, rect.Max
+					comp <- source{
 						Image: d.palette.Convert(c),
+						Rect: image.Rectangle{
+							Min: image.Point{
+								X: int(math.Floor(float64(min.X) * sx)),
+								Y: int(math.Floor(float64(min.Y) * sy)),
+							},
+							Max: image.Point{
+								X: int(math.Floor(float64(max.X) * sx)),
+								Y: int(math.Floor(float64(max.Y) * sy)),
+							},
+						},
 					}
 				}
 				wg.Done()
@@ -137,19 +164,21 @@ func (d *Decoder) Decode() (image.Image, error) {
 		close(comp)
 	}()
 
-	dst := image.NewRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
+	mask := image.NewUniform(color.Alpha{A: uint8(200)})
 	// tile composition routine
+	log.Println("[mosaic] Composing image")
+	dst := <-scaled
 	for tile := range comp {
 		// draw tile in to destination
-		draw.Draw(dst, tile.Rect, tile.Image, tile.Rect.Min, draw.Src)
+		draw.DrawMask(dst, tile.Rect, tile.Image, image.ZP, mask, image.ZP, draw.Over)
 	}
 
-	return dst, err
+	return dst, nil
 }
 
 // window contains an image to render + a target rectangle
 // view to render it in to.
-type window struct {
-	Rect  image.Rectangle
+type source struct {
 	Image image.Image
+	Rect  image.Rectangle
 }
