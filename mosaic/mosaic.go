@@ -75,6 +75,8 @@ func (d *Decoder) Decode() (image.Image, error) {
 	comp := make(chan source)
 	// resized image promise
 	scaled := make(chan draw.Image)
+	// error channel for failed palette generation
+	errc := make(chan error)
 
 	bounds := d.im.Bounds()
 	// initial image bounds
@@ -94,104 +96,120 @@ func (d *Decoder) Decode() (image.Image, error) {
 		close(scaled)
 	}()
 
-	imtile := NewImageTile(d.im)
+	// Begin calculating tiles to sample/scale
 	log.Println("[mosaic] Calculating tiles")
-	// begin tiling routing
-	go func() {
-		x, y := bounds.Min.X, bounds.Min.Y
-		dx := int(math.Ceil(float64(bounds.Max.X / d.width)))
-		dy := int(math.Ceil(float64(bounds.Max.Y / d.height)))
+	go d.bounds(proc, bounds)
 
-		x1 := x
-		x2 := x + dx
-		for {
-			// don't let x1 exceed max X
-			if x2 > bounds.Max.X {
-				x2 = bounds.Max.X
-			}
-
-			y1 := y
-			y2 := y + dx
-			for {
-				// don't let y1 exceed max Y
-				if y2 > bounds.Max.Y {
-					y2 = bounds.Max.Y
-				}
-
-				// create rectangle view
-				proc <- image.Rect(x1, y1, x2, y2)
-
-				// break now because we have reached the max boundary
-				if y1+dy >= bounds.Max.Y {
-					break
-				}
-				// increase y by dy
-				y1 = y2
-				y2 += dy
-			}
-			// break now because we have reached the max boundary
-			if x1+dx >= bounds.Max.X {
-				break
-			}
-			// increase x by dx
-			x1 = x2
-			x2 += dx
-		}
-		close(proc)
-	}()
-
-	log.Println("[mosaic] Fetching color information")
 	// average calculation go routines
-	var perr error
-	var wg sync.WaitGroup
-	go func() {
-		palette, err := d.palette(d.size)
-		if err != nil {
-			log.Println("[mosaic] Error creating palette")
-			perr = err
-			close(comp)
-			return
-		}
-		for i := 0; i < 10; i++ {
-			wg.Add(1)
-			go func() {
-				for rect := range proc {
-					c := imtile.ColorAt(rect)
-					min, max := rect.Min, rect.Max
-					comp <- source{
-						Image: palette.Convert(c),
-						Rect: image.Rectangle{
-							Min: image.Point{
-								X: int(math.Floor(float64(min.X) * sx)),
-								Y: int(math.Floor(float64(min.Y) * sy)),
-							},
-							Max: image.Point{
-								X: int(math.Floor(float64(max.X) * sx)),
-								Y: int(math.Floor(float64(max.Y) * sy)),
-							},
-						},
-					}
-				}
-				wg.Done()
-			}()
-		}
-		wg.Wait()
-		close(comp)
-	}()
+	log.Println("[mosaic] Fetching color information")
+	go d.process(proc, comp, errc, sx, sy)
 
-	mask := image.NewUniform(color.Alpha{A: uint8(200)})
 	// tile composition routine
 	log.Println("[mosaic] Composing image")
+	mask := image.NewUniform(color.Alpha{A: uint8(200)})
+	// get scaled source image
 	dst := <-scaled
-	for tile := range comp {
-		// draw tile in to destination
-		draw.DrawMask(dst, tile.Rect, tile.Image, image.ZP, mask, image.ZP, draw.Over)
-	}
-	if perr != nil {
-		return nil, perr
+	if err := func() error {
+		for {
+			select {
+			case tile, ok := <-comp:
+				if !ok {
+					return nil
+				}
+				draw.DrawMask(dst, tile.Rect, tile.Image, image.ZP, mask, image.ZP, draw.Over)
+			case err := <-errc:
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}(); err != nil {
+		return nil, err
 	}
 
 	return dst, nil
+}
+
+func (d *Decoder) bounds(proc chan<- image.Rectangle, bounds image.Rectangle) {
+	x, y := bounds.Min.X, bounds.Min.Y
+	dx := int(math.Ceil(float64(bounds.Max.X / d.width)))
+	dy := int(math.Ceil(float64(bounds.Max.Y / d.height)))
+
+	x1 := x
+	x2 := x + dx
+	for {
+		// don't let x1 exceed max X
+		if x2 > bounds.Max.X {
+			x2 = bounds.Max.X
+		}
+
+		y1 := y
+		y2 := y + dx
+		for {
+			// don't let y1 exceed max Y
+			if y2 > bounds.Max.Y {
+				y2 = bounds.Max.Y
+			}
+
+			// create rectangle view
+			proc <- image.Rect(x1, y1, x2, y2)
+
+			// break now because we have reached the max boundary
+			if y1+dy >= bounds.Max.Y {
+				break
+			}
+			// increase y by dy
+			y1 = y2
+			y2 += dy
+		}
+		// break now because we have reached the max boundary
+		if x1+dx >= bounds.Max.X {
+			break
+		}
+		// increase x by dx
+		x1 = x2
+		x2 += dx
+	}
+	close(proc)
+}
+
+func (d *Decoder) process(proc <-chan image.Rectangle, comp chan<- source, errc chan<- error, sx, sy float64) {
+	var wg sync.WaitGroup
+	imtile := NewImageTile(d.im)
+	palette, err := d.palette(d.size)
+	if err != nil {
+		log.Println("[mosaic] Error creating palette")
+		close(comp)
+		errc <- err
+		close(errc)
+		return
+	}
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			for rect := range proc {
+				c := imtile.ColorAt(rect)
+				min, max := rect.Min, rect.Max
+				comp <- source{
+					Image: palette.Convert(c),
+					Rect: image.Rectangle{
+						Min: image.Point{
+							X: int(math.Floor(float64(min.X) * sx)),
+							Y: int(math.Floor(float64(min.Y) * sy)),
+						},
+						Max: image.Point{
+							X: int(math.Floor(float64(max.X) * sx)),
+							Y: int(math.Floor(float64(max.Y) * sy)),
+						},
+					},
+				}
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	close(comp)
+	close(errc)
 }
 
 // window contains an image to render + a target rectangle
