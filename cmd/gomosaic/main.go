@@ -52,7 +52,7 @@ func main() {
 		log.Fatal("Tiling Error: ", err)
 	}
 
-	palette := func(size int) (*mosaic.TilePalette, error) { return mosaic.NewUniformWebColorPalette(size), nil }
+	palette := mosaic.CommonPaletteGenerator(mosaic.NewUniformWebColorPalette)
 	if dirp != "" {
 		palette = func(size int) (*mosaic.TilePalette, error) { return mosaic.NewImageTilePalette(dirp, size) }
 	}

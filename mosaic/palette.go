@@ -6,6 +6,7 @@ import (
 	"image/color/palette"
 	"os"
 	"path/filepath"
+	"sync"
 
 	_ "image/gif"
 	_ "image/jpeg"
@@ -23,9 +24,28 @@ func (k Key) Color() color.Color {
 	return color.RGBA{uint8(k[0]), uint8(k[1]), uint8(k[2]), uint8(k[3])}
 }
 
+type PaletteGeneratorFunc func(size int) (*TilePalette, error)
+
+func (p PaletteGeneratorFunc) Begin(size int) <-chan *TilePalette {
+	ch := make(chan *TilePalette)
+	go func() {
+		pt, err := p(size)
+		if err == nil {
+			ch <- pt
+		}
+		close(ch)
+	}()
+	return ch
+}
+
+func CommonPaletteGenerator(fn func(int) *TilePalette) PaletteGeneratorFunc {
+	return func(size int) (*TilePalette, error) { return fn(size), nil }
+}
+
 type TilePalette struct {
-	lookup  map[Key]Tile
+	lookup  map[Key][]Tile
 	palette color.Palette
+	mu      sync.Mutex
 	Size    int
 }
 
@@ -78,24 +98,37 @@ func NewImageTilePalette(dir string, size int) (*TilePalette, error) {
 
 func NewTilePalette(tiles []Tile, size int) *TilePalette {
 	t := &TilePalette{
-		lookup:  map[Key]Tile{},
+		lookup:  map[Key][]Tile{},
 		palette: color.Palette(make([]color.Color, 0)),
 		Size:    size,
 	}
 
 	for _, tile := range tiles {
 		t.palette = append(t.palette, tile)
-		t.lookup[NewKey(tile)] = tile
+		key := NewKey(tile)
+		if l, ok := t.lookup[key]; ok {
+			t.lookup[key] = append(l, tile)
+			continue
+		}
+		t.lookup[NewKey(tile)] = []Tile{tile}
 	}
 	return t
 }
 
 func (t *TilePalette) Convert(c color.Color) Tile {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	// normalise the color in to palette colors
 	c = t.palette.Convert(c)
 
 	// lookup using key from color palette
-	if tile, ok := t.lookup[NewKey(c)]; ok {
+	key := NewKey(c)
+	if tiles, ok := t.lookup[key]; ok {
+		if len(tiles) == 1 {
+			return tiles[0]
+		}
+		tile := tiles[0]
+		t.lookup[key] = append(tiles[1:], tile)
 		return tile
 	}
 	return nil

@@ -48,7 +48,7 @@ func WithPalette(p func(int) (*TilePalette, error)) option {
 
 type Decoder struct {
 	im                  image.Image
-	palette             func(int) (*TilePalette, error)
+	palette             PaletteGeneratorFunc
 	width, height, size int
 }
 
@@ -58,7 +58,7 @@ func NewDecoder(im image.Image, opts ...option) *Decoder {
 		width:   100,
 		height:  100,
 		size:    100,
-		palette: func(size int) (*TilePalette, error) { return NewUniformWebColorPalette(size), nil },
+		palette: CommonPaletteGenerator(NewUniformWebColorPalette),
 	}
 
 	for _, opt := range opts {
@@ -106,7 +106,7 @@ func (d *Decoder) Decode() (image.Image, error) {
 
 	// tile composition routine
 	log.Println("[mosaic] Composing image")
-	mask := image.NewUniform(color.Alpha{A: uint8(200)})
+	mask := image.NewUniform(color.Alpha{A: uint8(165)})
 	// get scaled source image
 	dst := <-scaled
 	if err := func() error {
