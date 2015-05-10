@@ -10,63 +10,27 @@ import (
 	"github.com/bamiaux/rez"
 
 	"image/color"
-	"image/color/palette"
 	"image/draw"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 )
 
-// type convert palette.WebSafe in to color.Palette type locally
-var WebSafe color.Palette = color.Palette(palette.WebSafe)
-
-type option func(d *Decoder)
-
-func WithWidth(w int) option {
-	return func(d *Decoder) {
-		d.width = w
-	}
-}
-
-func WithHeight(h int) option {
-	return func(d *Decoder) {
-		d.height = h
-	}
-}
-
-func WithSize(s int) option {
-	return func(d *Decoder) {
-		d.size = s
-	}
-}
-
-func WithAlpha(a uint8) option {
-	return func(d *Decoder) {
-		d.alpha = a
-	}
-}
-
-func WithPalette(p func(int) (*TilePalette, error)) option {
-	return func(d *Decoder) {
-		d.palette = p
-	}
-}
-
-type Decoder struct {
+type Converter struct {
 	im                  image.Image
-	palette             PaletteGeneratorFunc
+	generator           PaletteGenerator
 	width, height, size int
 	alpha               uint8
 }
 
-func NewDecoder(im image.Image, opts ...option) *Decoder {
-	d := &Decoder{
-		im:      im,
-		width:   100,
-		height:  100,
-		size:    100,
-		alpha:   255,
-		palette: CommonPaletteGenerator(NewUniformWebColorPalette),
+func NewConverter(im image.Image, opts ...option) *Converter {
+	d := &Converter{
+		im:        im,
+		width:     100,
+		height:    100,
+		size:      100,
+		alpha:     255,
+		generator: CommonPaletteGenerator(NewUniformWebColorPalette),
 	}
 
 	for _, opt := range opts {
@@ -76,7 +40,7 @@ func NewDecoder(im image.Image, opts ...option) *Decoder {
 	return d
 }
 
-func (d *Decoder) Decode() (image.Image, error) {
+func (d *Converter) Decode() (image.Image, error) {
 	// tiles to process channel
 	proc := make(chan image.Rectangle, 2)
 	// tiles to compose
@@ -138,7 +102,7 @@ func (d *Decoder) Decode() (image.Image, error) {
 	return dst, nil
 }
 
-func (d *Decoder) bounds(proc chan<- image.Rectangle, bounds image.Rectangle) {
+func (d *Converter) bounds(proc chan<- image.Rectangle, bounds image.Rectangle) {
 	x, y := bounds.Min.X, bounds.Min.Y
 	dx := int(math.Ceil(float64(bounds.Max.X / d.width)))
 	dy := int(math.Ceil(float64(bounds.Max.Y / d.height)))
@@ -181,10 +145,10 @@ func (d *Decoder) bounds(proc chan<- image.Rectangle, bounds image.Rectangle) {
 	close(proc)
 }
 
-func (d *Decoder) process(proc <-chan image.Rectangle, comp chan<- source, errc chan<- error, sx, sy float64) {
+func (d *Converter) process(proc <-chan image.Rectangle, comp chan<- source, errc chan<- error, sx, sy float64) {
 	var wg sync.WaitGroup
 	imtile := NewImageTile(d.im)
-	palette, err := d.palette(d.size)
+	palette, err := d.generator.Palette(d.size)
 	if err != nil {
 		log.Println("[mosaic] Error creating palette")
 		close(comp)

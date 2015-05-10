@@ -3,7 +3,11 @@ package mosaic
 import (
 	"image"
 	"image/color"
+	"image/color/palette"
 )
+
+// type convert palette.WebSafe in to color.Palette type locally
+var WebSafe color.Palette = color.Palette(palette.WebSafe)
 
 type Tile interface {
 	image.Image

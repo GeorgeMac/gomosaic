@@ -24,7 +24,15 @@ func (k Key) Color() color.Color {
 	return color.RGBA{uint8(k[0]), uint8(k[1]), uint8(k[2]), uint8(k[3])}
 }
 
+type PaletteGenerator interface {
+	Palette(size int) (*TilePalette, error)
+}
+
 type PaletteGeneratorFunc func(size int) (*TilePalette, error)
+
+func (p PaletteGeneratorFunc) Palette(size int) (*TilePalette, error) {
+	return p(size)
+}
 
 func (p PaletteGeneratorFunc) Begin(size int) <-chan *TilePalette {
 	ch := make(chan *TilePalette)
@@ -38,8 +46,8 @@ func (p PaletteGeneratorFunc) Begin(size int) <-chan *TilePalette {
 	return ch
 }
 
-func CommonPaletteGenerator(fn func(int) *TilePalette) PaletteGeneratorFunc {
-	return func(size int) (*TilePalette, error) { return fn(size), nil }
+func CommonPaletteGenerator(fn func(int) *TilePalette) PaletteGenerator {
+	return PaletteGeneratorFunc(func(size int) (*TilePalette, error) { return fn(size), nil })
 }
 
 type TilePalette struct {

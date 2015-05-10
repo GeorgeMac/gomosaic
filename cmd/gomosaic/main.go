@@ -55,13 +55,15 @@ func main() {
 
 	palette := mosaic.CommonPaletteGenerator(mosaic.NewUniformWebColorPalette)
 	if dirp != "" {
-		palette = func(size int) (*mosaic.TilePalette, error) { return mosaic.NewImageTilePalette(dirp, size) }
+		palette = mosaic.PaletteGeneratorFunc(func(size int) (*mosaic.TilePalette, error) {
+			return mosaic.NewImageTilePalette(dirp, size)
+		})
 	}
-	decoder := mosaic.NewDecoder(im,
+	decoder := mosaic.NewConverter(im,
 		mosaic.WithWidth(width),
 		mosaic.WithHeight(height),
 		mosaic.WithSize(t),
-		mosaic.WithPalette(palette),
+		mosaic.WithPaletteGenerator(palette),
 		mosaic.WithAlpha(uint8(alpha)))
 	im, err = decoder.Decode()
 	if err != nil {
