@@ -10,7 +10,6 @@ import (
 	"os"
 
 	"github.com/GeorgeMac/gomosaic/mosaic"
-	"github.com/GeorgeMac/gomosaic/mosaic/tile"
 )
 
 func main() {
@@ -48,12 +47,12 @@ func main() {
 	rgbaim := image.NewRGBA(rect)
 	draw.Draw(rgbaim, rect, im, image.ZP, draw.Src)
 
-	im, err = tile.Tile(rgbaim, w, w)
+	im, err = mosaic.Resize(rgbaim, w, w)
 	if err != nil {
 		log.Fatal("Tiling Error: ", err)
 	}
 
-	palette := mosaic.CommonPaletteGenerator(mosaic.NewUniformWebColorPalette)
+	palette := mosaic.PaletteGeneratorFunc(mosaic.NewUniformWebColorPalette)
 	if dirp != "" {
 		palette = mosaic.PaletteGeneratorFunc(func(size int) (*mosaic.TilePalette, error) {
 			return mosaic.NewImageTilePalette(dirp, size)

@@ -30,7 +30,7 @@ func NewConverter(im image.Image, opts ...option) *Converter {
 		height:    100,
 		size:      100,
 		alpha:     255,
-		generator: CommonPaletteGenerator(NewUniformWebColorPalette),
+		generator: PaletteGeneratorFunc(NewUniformWebColorPalette),
 	}
 
 	for _, opt := range opts {
@@ -163,7 +163,7 @@ func (d *Converter) process(proc <-chan image.Rectangle, comp chan<- source, err
 				c := imtile.ColorAt(rect)
 				min, max := rect.Min, rect.Max
 				comp <- source{
-					Image: palette.Convert(c),
+					Image: palette.Convert(NewColorKey(c)),
 					Rect: image.Rectangle{
 						Min: image.Point{
 							X: int(math.Floor(float64(min.X) * sx)),

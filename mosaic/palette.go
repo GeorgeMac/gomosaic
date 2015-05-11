@@ -1,6 +1,7 @@
 package mosaic
 
 import (
+	"encoding/binary"
 	"image"
 	"image/color"
 	"image/color/palette"
@@ -13,14 +14,33 @@ import (
 	_ "image/png"
 )
 
-type Key [4]uint32
+type ColorKey [4]uint32
 
-func NewKey(c color.Color) Key {
+func NewColorKey(c color.Color) ColorKey {
 	r, g, b, a := c.RGBA()
 	return [4]uint32{r, g, b, a}
 }
 
-func (k Key) Color() color.Color {
+func ColorKeyFromBytes(b []byte) ColorKey {
+	key := ColorKey{}
+	for i := 0; i < len(key); i++ {
+		n := i * 8
+		v, _ := binary.Uvarint(b[n : n+8])
+		key[i] = uint32(v)
+	}
+	return key
+}
+
+func (k ColorKey) Bytes() []byte {
+	buf := make([]byte, 32)
+	for i, v := range k {
+		n := i * 8
+		binary.PutUvarint(buf[n:n+8], uint64(v))
+	}
+	return buf
+}
+
+func (k ColorKey) Color() color.Color {
 	return color.RGBA{uint8(k[0]), uint8(k[1]), uint8(k[2]), uint8(k[3])}
 }
 
@@ -46,25 +66,14 @@ func (p PaletteGeneratorFunc) Begin(size int) <-chan *TilePalette {
 	return ch
 }
 
-func CommonPaletteGenerator(fn func(int) *TilePalette) PaletteGenerator {
-	return PaletteGeneratorFunc(func(size int) (*TilePalette, error) { return fn(size), nil })
-}
-
-type TilePalette struct {
-	lookup  map[Key][]Tile
-	palette color.Palette
-	mu      sync.Mutex
-	Size    int
-}
-
-func NewUniformWebColorPalette(size int) *TilePalette {
+func NewUniformWebColorPalette(size int) (*TilePalette, error) {
 	tiles := make([]Tile, 0)
 	for _, c := range palette.WebSafe {
 		tiles = append(tiles, &UniformTile{
 			Uniform: image.NewUniform(c),
 		})
 	}
-	return NewTilePalette(tiles, size)
+	return NewTilePalette(tiles, size), nil
 }
 
 func NewImageTilePalette(dir string, size int) (*TilePalette, error) {
@@ -104,33 +113,40 @@ func NewImageTilePalette(dir string, size int) (*TilePalette, error) {
 	return NewTilePalette(tile, size), nil
 }
 
+type TilePalette struct {
+	lookup  map[ColorKey][]Tile
+	palette color.Palette
+	mu      sync.Mutex
+	Size    int
+}
+
 func NewTilePalette(tiles []Tile, size int) *TilePalette {
 	t := &TilePalette{
-		lookup:  map[Key][]Tile{},
+		lookup:  map[ColorKey][]Tile{},
 		palette: color.Palette(make([]color.Color, 0)),
 		Size:    size,
 	}
 
 	for _, tile := range tiles {
 		t.palette = append(t.palette, tile)
-		key := NewKey(tile)
+		key := NewColorKey(tile)
 		if l, ok := t.lookup[key]; ok {
 			t.lookup[key] = append(l, tile)
 			continue
 		}
-		t.lookup[NewKey(tile)] = []Tile{tile}
+		t.lookup[NewColorKey(tile)] = []Tile{tile}
 	}
 	return t
 }
 
-func (t *TilePalette) Convert(c color.Color) Tile {
+func (t *TilePalette) Convert(k ColorKey) Tile {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	// normalise the color in to palette colors
-	c = t.palette.Convert(c)
+	c := t.palette.Convert(k.Color())
 
 	// lookup using key from color palette
-	key := NewKey(c)
+	key := NewColorKey(c)
 	if tiles, ok := t.lookup[key]; ok {
 		if len(tiles) == 1 {
 			return tiles[0]

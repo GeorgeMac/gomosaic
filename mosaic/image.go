@@ -17,28 +17,34 @@ type Tile interface {
 
 type ImageTile struct {
 	image.Image
-	c color.Color
+	Color color.Color
 }
 
 func NewImageTile(i image.Image) *ImageTile {
 	tile := &ImageTile{
 		Image: i,
 	}
+
+	if i, ok := i.(*image.Uniform); ok {
+		tile.Color = i.C
+		return tile
+	}
+
 	bounds := i.Bounds()
-	tile.c = tile.ColorAt(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
+	tile.Color = tile.ColorAt(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
 	return tile
 }
 
 func (t *ImageTile) RGBA() (r, g, b, a uint32) {
-	return t.c.RGBA()
+	return t.Color.RGBA()
 }
 
 func (t *ImageTile) ColorAt(r image.Rectangle) color.Color {
-	bins := map[Key]int{}
+	bins := map[ColorKey]int{}
 
 	for y := r.Min.Y; y < r.Max.Y; y++ {
 		for x := r.Min.X; x < r.Max.X; x++ {
-			key := NewKey(WebSafe.Convert(t.Image.At(x, y)))
+			key := NewColorKey(WebSafe.Convert(t.Image.At(x, y)))
 			if v, ok := bins[key]; ok {
 				bins[key] = v + 1
 				continue

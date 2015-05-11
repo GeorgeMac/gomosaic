@@ -1,4 +1,4 @@
-package tile
+package mosaic
 
 import (
 	"image"
@@ -8,7 +8,7 @@ import (
 	"github.com/bamiaux/rez"
 )
 
-func Tile(m image.Image, width, height int) (image.Image, error) {
+func Resize(m image.Image, width, height int) (image.Image, error) {
 	bounds := m.Bounds()
 	x, y := bounds.Dx(), bounds.Dy()
 	if x < width || y < height {

@@ -8,7 +8,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/GeorgeMac/gomosaic/mosaic/tile"
+	"github.com/GeorgeMac/gomosaic/mosaic"
 
 	_ "image/gif"
 	_ "image/jpeg"
@@ -42,7 +42,7 @@ func main() {
 	copyim := image.NewRGBA(rect)
 	draw.Draw(copyim, rect, srcim, image.ZP, draw.Src)
 
-	dstim, err := tile.Tile(copyim, size, size)
+	dstim, err := mosaic.Resize(copyim, size, size)
 	if err != nil {
 		log.Fatal(err)
 	}
