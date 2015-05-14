@@ -1,3 +1,4 @@
 *.png
 *.jpeg
 *.gif
+.DS_Store
