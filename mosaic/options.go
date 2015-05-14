@@ -1,5 +1,7 @@
 package mosaic
 
+import "github.com/GeorgeMac/gomosaic/mosaic/palette"
+
 type option func(d *Converter)
 
 func WithWidth(w int) option {
@@ -26,7 +28,7 @@ func WithAlpha(a uint8) option {
 	}
 }
 
-func WithPaletteGenerator(g PaletteGenerator) option {
+func WithPaletteGenerator(g palette.Generator) option {
 	return func(d *Converter) {
 		d.generator = g
 	}

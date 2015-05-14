@@ -1,74 +1,22 @@
 package mosaic
 
 import (
-	"encoding/binary"
 	"image"
 	"image/color"
-	"image/color/palette"
+	plt "image/color/palette"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"os"
 	"path/filepath"
 	"sync"
 
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
+	"github.com/GeorgeMac/gomosaic/mosaic/palette"
 )
 
-type ColorKey [4]uint32
-
-func NewColorKey(c color.Color) ColorKey {
-	r, g, b, a := c.RGBA()
-	return [4]uint32{r, g, b, a}
-}
-
-func ColorKeyFromBytes(b []byte) ColorKey {
-	key := ColorKey{}
-	for i := 0; i < len(key); i++ {
-		n := i * 8
-		v, _ := binary.Uvarint(b[n : n+8])
-		key[i] = uint32(v)
-	}
-	return key
-}
-
-func (k ColorKey) Bytes() []byte {
-	buf := make([]byte, 32)
-	for i, v := range k {
-		n := i * 8
-		binary.PutUvarint(buf[n:n+8], uint64(v))
-	}
-	return buf
-}
-
-func (k ColorKey) Color() color.Color {
-	return color.RGBA{uint8(k[0]), uint8(k[1]), uint8(k[2]), uint8(k[3])}
-}
-
-type PaletteGenerator interface {
-	Palette(size int) (*TilePalette, error)
-}
-
-type PaletteGeneratorFunc func(size int) (*TilePalette, error)
-
-func (p PaletteGeneratorFunc) Palette(size int) (*TilePalette, error) {
-	return p(size)
-}
-
-func (p PaletteGeneratorFunc) Begin(size int) <-chan *TilePalette {
-	ch := make(chan *TilePalette)
-	go func() {
-		pt, err := p(size)
-		if err == nil {
-			ch <- pt
-		}
-		close(ch)
-	}()
-	return ch
-}
-
-func NewUniformWebColorPalette(size int) (*TilePalette, error) {
-	tiles := make([]Tile, 0)
-	for _, c := range palette.WebSafe {
+func NewUniformWebColorPalette(_ string, size int) (palette.Palette, error) {
+	tiles := make([]palette.Tile, 0)
+	for _, c := range plt.WebSafe {
 		tiles = append(tiles, &UniformTile{
 			Uniform: image.NewUniform(c),
 		})
@@ -76,8 +24,8 @@ func NewUniformWebColorPalette(size int) (*TilePalette, error) {
 	return NewTilePalette(tiles, size), nil
 }
 
-func NewImageTilePalette(dir string, size int) (*TilePalette, error) {
-	tile := make([]Tile, 0)
+func NewImageTilePalette(dir string, size int) (palette.Palette, error) {
+	tile := make([]palette.Tile, 0)
 	walkfn := func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -114,39 +62,39 @@ func NewImageTilePalette(dir string, size int) (*TilePalette, error) {
 }
 
 type TilePalette struct {
-	lookup  map[ColorKey][]Tile
+	lookup  map[palette.ColorKey][]palette.Tile
 	palette color.Palette
 	mu      sync.Mutex
 	Size    int
 }
 
-func NewTilePalette(tiles []Tile, size int) *TilePalette {
+func NewTilePalette(tiles []palette.Tile, size int) *TilePalette {
 	t := &TilePalette{
-		lookup:  map[ColorKey][]Tile{},
+		lookup:  map[palette.ColorKey][]palette.Tile{},
 		palette: color.Palette(make([]color.Color, 0)),
 		Size:    size,
 	}
 
 	for _, tile := range tiles {
 		t.palette = append(t.palette, tile)
-		key := NewColorKey(tile)
+		key := palette.NewColorKey(tile)
 		if l, ok := t.lookup[key]; ok {
 			t.lookup[key] = append(l, tile)
 			continue
 		}
-		t.lookup[NewColorKey(tile)] = []Tile{tile}
+		t.lookup[palette.NewColorKey(tile)] = []palette.Tile{tile}
 	}
 	return t
 }
 
-func (t *TilePalette) Convert(k ColorKey) Tile {
+func (t *TilePalette) Convert(k palette.ColorKey) palette.Tile {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	// normalise the color in to palette colors
 	c := t.palette.Convert(k.Color())
 
 	// lookup using key from color palette
-	key := NewColorKey(c)
+	key := palette.NewColorKey(c)
 	if tiles, ok := t.lookup[key]; ok {
 		if len(tiles) == 1 {
 			return tiles[0]

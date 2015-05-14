@@ -7,6 +7,7 @@ import (
 	"math"
 	"sync"
 
+	"github.com/GeorgeMac/gomosaic/mosaic/palette"
 	"github.com/bamiaux/rez"
 
 	"image/color"
@@ -18,19 +19,21 @@ import (
 
 type Converter struct {
 	im                  image.Image
-	generator           PaletteGenerator
+	term                string
+	generator           palette.Generator
 	width, height, size int
 	alpha               uint8
 }
 
-func NewConverter(im image.Image, opts ...option) *Converter {
+func NewConverter(im image.Image, term string, opts ...option) *Converter {
 	d := &Converter{
 		im:        im,
+		term:      term,
 		width:     100,
 		height:    100,
 		size:      100,
 		alpha:     255,
-		generator: PaletteGeneratorFunc(NewUniformWebColorPalette),
+		generator: palette.GeneratorFunc(NewUniformWebColorPalette),
 	}
 
 	for _, opt := range opts {
@@ -148,7 +151,7 @@ func (d *Converter) bounds(proc chan<- image.Rectangle, bounds image.Rectangle) 
 func (d *Converter) process(proc <-chan image.Rectangle, comp chan<- source, errc chan<- error, sx, sy float64) {
 	var wg sync.WaitGroup
 	imtile := NewImageTile(d.im)
-	palette, err := d.generator.Palette(d.size)
+	p, err := d.generator.Palette(d.term, d.size)
 	if err != nil {
 		log.Println("[mosaic] Error creating palette")
 		close(comp)
@@ -163,7 +166,7 @@ func (d *Converter) process(proc <-chan image.Rectangle, comp chan<- source, err
 				c := imtile.ColorAt(rect)
 				min, max := rect.Min, rect.Max
 				comp <- source{
-					Image: palette.Convert(NewColorKey(c)),
+					Image: p.Convert(palette.NewColorKey(c)),
 					Rect: image.Rectangle{
 						Min: image.Point{
 							X: int(math.Floor(float64(min.X) * sx)),

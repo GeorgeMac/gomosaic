@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/GeorgeMac/gomosaic/mosaic"
+	"github.com/GeorgeMac/gomosaic/mosaic/palette"
 )
 
 func main() {
@@ -52,17 +53,16 @@ func main() {
 		log.Fatal("Tiling Error: ", err)
 	}
 
-	palette := mosaic.PaletteGeneratorFunc(mosaic.NewUniformWebColorPalette)
+	p := palette.GeneratorFunc(mosaic.NewUniformWebColorPalette)
 	if dirp != "" {
-		palette = mosaic.PaletteGeneratorFunc(func(size int) (*mosaic.TilePalette, error) {
-			return mosaic.NewImageTilePalette(dirp, size)
-		})
+		p = palette.GeneratorFunc(mosaic.NewImageTilePalette)
 	}
 	decoder := mosaic.NewConverter(im,
+		dirp,
 		mosaic.WithWidth(width),
 		mosaic.WithHeight(height),
 		mosaic.WithSize(t),
-		mosaic.WithPaletteGenerator(palette),
+		mosaic.WithPaletteGenerator(p),
 		mosaic.WithAlpha(uint8(alpha)))
 	im, err = decoder.Decode()
 	if err != nil {
@@ -70,7 +70,6 @@ func main() {
 	}
 
 	var out io.Writer = os.Stdout
-
 	if outp != "" {
 		var err error
 		fi, err := os.Create(outp)

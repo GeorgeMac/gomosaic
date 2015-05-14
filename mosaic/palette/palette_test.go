@@ -1,4 +1,4 @@
-package mosaic
+package palette
 
 import (
 	"image/color"

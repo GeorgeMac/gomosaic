@@ -3,17 +3,13 @@ package mosaic
 import (
 	"image"
 	"image/color"
-	"image/color/palette"
+	plt "image/color/palette"
+
+	"github.com/GeorgeMac/gomosaic/mosaic/palette"
 )
 
 // type convert palette.WebSafe in to color.Palette type locally
-var WebSafe color.Palette = color.Palette(palette.WebSafe)
-
-type Tile interface {
-	image.Image
-	color.Color
-	ColorAt(image.Rectangle) color.Color
-}
+var WebSafe color.Palette = color.Palette(plt.WebSafe)
 
 type ImageTile struct {
 	image.Image
@@ -40,11 +36,11 @@ func (t *ImageTile) RGBA() (r, g, b, a uint32) {
 }
 
 func (t *ImageTile) ColorAt(r image.Rectangle) color.Color {
-	bins := map[ColorKey]int{}
+	bins := map[palette.ColorKey]int{}
 
 	for y := r.Min.Y; y < r.Max.Y; y++ {
 		for x := r.Min.X; x < r.Max.X; x++ {
-			key := NewColorKey(WebSafe.Convert(t.Image.At(x, y)))
+			key := palette.NewColorKey(WebSafe.Convert(t.Image.At(x, y)))
 			if v, ok := bins[key]; ok {
 				bins[key] = v + 1
 				continue
